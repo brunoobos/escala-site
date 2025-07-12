@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Escala 24x96 - Admin Completo</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #f5f5f5; padding: 20px; }
+  h1 { text-align: center; }
+  .section { background: #fff; border-radius: 5px; padding: 15px; margin-bottom: 20px; box-shadow: 0 0 5px #ccc; }
+  button { padding: 8px 15px; margin: 5px; cursor: pointer; border-radius: 4px; border: none; }
+  button#btnAddEquipe { background: #28a745; color: white; }
+  button#btnSalvar { background: #007bff; color: white; }
+  button#btnVisualizar { background: #ffc107; }
+  button#btnExcluir { background: #dc3545; color: white; }
+  button#btnGerarEscala { background: #17a2b8; color: white; }
+  button#btnAfastamentos { background: #6f42c1; color: white; }
+  button#btnFeriados { background: #6c757d; color: white; }
+  .calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 20px; }
+  .calendar-day { border: 1px solid #ccc; border-radius: 4px; padding: 5px; min-height: 90px; font-size: 12px; background: #fff; position: relative; }
+  .calendar-day.feriado { background-color: #b0b0b0 !important; color: #fff; }
+  .calendar-day.hoje { background-color: #dc3545 !important; color: #fff; }
+  .calendar-day .data-num { font-weight: bold; }
+  .work { margin: 2px 0; padding: 2px 4px; border-radius: 3px; cursor: pointer; }
+  .afastamento { margin: 2px 0; padding: 2px 4px; border-radius: 3px; font-size: 11px; color: #fff; cursor: pointer; }
+  .ferias { background: #ffc107; color: #333; }
+  .licenca { background: #dc3545; }
+  .compensacao { background: #6f42c1; }
+
+  .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; 
+           background: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
+  .modal-content { background: #fff; padding: 20px; border-radius: 8px; width: 90%; max-width: 400px; position: relative; }
+  .modal-content label { display: block; margin: 10px 0 4px; }
+  .modal-content input, .modal-content select { width: 100%; padding: 6px; }
+  .close { position: absolute; top: 10px; right: 15px; font-size: 20px; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<h1>Administração da Escala 24x96</h1>
+
+<div class="section" id="equipes-container"></div>
+
+<button id="btnAddEquipe">Adicionar Equipe</button>
+<button id="btnSalvar">Salvar Equipes</button>
+<button id="btnVisualizar">Visualizar Equipes</button>
+<button id="btnExcluir">Excluir Equipe</button>
+<button id="btnAfastamentos">Cadastrar Afastamentos</button>
+<button id="btnFeriados">Cadastrar Feriados</button>
+<button id="btnExcluirFeriado">Excluir Feriado</button>
+
+<div class="section">
+  <h2>Gerar Relatório da Escala</h2>
+  <label for="selectEquipe">Equipe:</label>
+  <select id="selectEquipe"><option value="-1">Todas as equipes</option></select><br/>
+  <label for="selectMes">Mês:</label>
+  <select id="selectMes"></select><br/>
+  <label for="selectAno">Ano:</label>
+  <select id="selectAno"></select><br/>
+  <button id="btnGerarEscala">Gerar Escala Mensal</button>
+</div>
+
+<div id="relatorio"></div>
+
+<!-- Modal afastamento -->
+<div id="modalAfastamento" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="fecharModal('modalAfastamento')">&times;</span>
+    <h3>Cadastrar Afastamento</h3>
+    <label>Equipe:</label>
+    <select id="modalEquipe"></select>
+    <label>Membro:</label>
+    <select id="modalMembro">
+      <option value="F">Fixo</option>
+      <option value="R0">Rotativo 1</option>
+      <option value="R1">Rotativo 2</option>
+      <option value="R2">Rotativo 3</option>
+    </select>
+    <label>Tipo:</label>
+    <select id="modalTipo">
+      <option value="FERIAS">Férias</option>
+      <option value="LICENCA">Licença</option>
+      <option value="COMPENSACAO">Compensação</option>
+    </select>
+    <label>Data início:</label>
+    <input type="date" id="modalInicio">
+    <label>Data fim:</label>
+    <input type="date" id="modalFim">
+    <br><br>
+    <button onclick="salvarAfastamento()">Salvar</button>
+  </div>
+</div>
+
+<!-- Modal feriado -->
+<div id="modalFeriado" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="fecharModal('modalFeriado')">&times;</span>
+    <h3>Cadastrar Feriado</h3>
+    <label>Data do Feriado:</label>
+    <input type="date" id="feriadoData">
+    <br><br>
+    <button onclick="salvarFeriado()">Salvar Feriado</button>
+  </div>
+</div>
+
+<script>
+let equipes = JSON.parse(localStorage.getItem('equipes24x96') || '[]');
+let afastamentos = JSON.parse(localStorage.getItem('afastamentos24x96') || '[]');
+let feriados = JSON.parse(localStorage.getItem('feriados24x96') || '[]');
+let observacoes = JSON.parse(localStorage.getItem('observacoes24x96') || '{}');
+
+function salvarObservacoes() {
+  localStorage.setItem('observacoes24x96', JSON.stringify(observacoes));
+}
+function renderEquipes() {
+  const container = document.getElementById('equipes-container');
+  container.innerHTML = '';
+  equipes.forEach((eq, i) => {
+    eq.rotativos = eq.rotativos || ["", "", ""];
+    container.innerHTML += `
+      <div class="section">
+        <h3>Equipe ${i+1}</h3>
+        <label>Nome:</label><input type="text" value="${eq.nome||''}" onchange="equipes[${i}].nome=this.value"><br/>
+        <label>Data Início:</label><input type="date" value="${eq.dataInicio||''}" onchange="equipes[${i}].dataInicio=this.value"><br/>
+        <label>Fixo:</label><input type="text" value="${eq.fixo||''}" onchange="equipes[${i}].fixo=this.value"><br/>
+        ${eq.rotativos.map((r,j)=> `<label>R${j+1}:</label><input type="text" value="${r||''}" onchange="equipes[${i}].rotativos[${j}]=this.value"><br/>`).join('')}
+      </div>`;
+  });
+  atualizarSelectEquipe();
+}
+function atualizarSelectEquipe() {
+  const sel = document.getElementById('selectEquipe');
+  sel.innerHTML = '<option value="-1">Todas as equipes</option>';
+  equipes.forEach((eq,i)=> sel.innerHTML += `<option value="${i}">${eq.nome||'Equipe '+(i+1)}</option>`);
+  atualizarModalEquipe();
+}
+function salvarEquipes() {
+  localStorage.setItem('equipes24x96', JSON.stringify(equipes));
+  alert("Equipes salvas!");
+}
+function visualizarEquipes() {
+  alert(equipes.map((eq,i)=>`Equipe ${i+1}: ${eq.nome}, Fixo: ${eq.fixo}, Rotativos: ${eq.rotativos.join(', ')}`).join('\n\n'));
+}
+function excluirEquipe() {
+  let idx = prompt("Digite o número da equipe para excluir:");
+  idx = parseInt(idx);
+  if(!isNaN(idx)&&idx>=0&&idx<equipes.length){
+    if(confirm(`Excluir equipe ${equipes[idx].nome}?`)){
+      equipes.splice(idx,1);
+      salvarEquipes();
+      renderEquipes();
+    }
+  }
+}
+function abrirModal(id) { document.getElementById(id).style.display='flex'; }
+function fecharModal(id) { document.getElementById(id).style.display='none'; }
+function atualizarModalEquipe() {
+  const sel = document.getElementById('modalEquipe');
+  if(!sel) return;
+  sel.innerHTML='';
+  equipes.forEach((eq,i)=> sel.innerHTML += `<option value="${i}">${eq.nome}</option>`);
+}
+function salvarAfastamento() {
+  let eq=parseInt(document.getElementById('modalEquipe').value);
+  let membro=document.getElementById('modalMembro').value;
+  let tipo=document.getElementById('modalTipo').value;
+  let inicio=document.getElementById('modalInicio').value;
+  let fim=document.getElementById('modalFim').value;
+  if(!inicio||!fim) return alert("Preencha datas.");
+  afastamentos.push({equipe:eq,membro,tipo,inicio,fim});
+  localStorage.setItem('afastamentos24x96', JSON.stringify(afastamentos));
+  fecharModal('modalAfastamento');
+  gerarEscala();
+}
+function salvarFeriado(){
+  let data = document.getElementById('feriadoData').value;
+  if(!data) return alert("Selecione a data do feriado.");
+  feriados.push(data);
+  localStorage.setItem('feriados24x96', JSON.stringify(feriados));
+  fecharModal('modalFeriado');
+  gerarEscala();
+}
+document.getElementById('btnExcluirFeriado').onclick = () => {
+  if (feriados.length === 0) return alert("Nenhum feriado cadastrado.");
+  let lista = "Feriados cadastrados:\n";
+  feriados.forEach((f, i) => lista += `${i}: ${f}\n`);
+  let idx = prompt(lista + "\nDigite o número do feriado a excluir:");
+  idx = parseInt(idx);
+  if (!isNaN(idx) && idx >= 0 && idx < feriados.length) {
+    if (confirm(`Confirma excluir o feriado ${feriados[idx]}?`)) {
+      feriados.splice(idx, 1);
+      localStorage.setItem('feriados24x96', JSON.stringify(feriados));
+      alert("Feriado excluído!");
+      gerarEscala();
+    }
+  } else {
+    alert("Índice inválido.");
+  }
+};
+function editarAfastamento(idx) {
+  let af = afastamentos[idx];
+  let eqNome = equipes[af.equipe]?.nome || `Equipe ${af.equipe+1}`;
+  let membro = af.membro === 'F' ? 'Fixo' : `Rotativo ${parseInt(af.membro[1])+1}`;
+  let msg = `Afastamento:\nEquipe: ${eqNome}\nMembro: ${membro}\nTipo: ${af.tipo}\nPeríodo: ${af.inicio} até ${af.fim}`;
+  let opcao = prompt(`${msg}\n\nDigite:\n1 - Editar datas\n2 - Excluir\nOu deixe em branco para cancelar.`);
+  if (opcao === '1') {
+    let novoInicio = prompt("Nova data de início (aaaa-mm-dd):", af.inicio);
+    let novoFim = prompt("Nova data de fim (aaaa-mm-dd):", af.fim);
+    if (novoInicio && novoFim) {
+      af.inicio = novoInicio;
+      af.fim = novoFim;
+      localStorage.setItem('afastamentos24x96', JSON.stringify(afastamentos));
+      gerarEscala();
+    }
+  } else if (opcao === '2') {
+    if (confirm("Tem certeza que deseja excluir este afastamento?")) {
+      afastamentos.splice(idx,1);
+      localStorage.setItem('afastamentos24x96', JSON.stringify(afastamentos));
+      gerarEscala();
+    }
+  }
+}
+function gerarEscala() {
+  const mes = parseInt(document.getElementById('selectMes').value);
+  const ano = parseInt(document.getElementById('selectAno').value);
+  const eqIdx = parseInt(document.getElementById('selectEquipe').value);
+  const eqs = eqIdx === -1 ? equipes : [equipes[eqIdx]];
+  let html = `<h3>Escala ${document.getElementById('selectMes').options[mes].text}/${ano}</h3><div class="calendar">`;
+  ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].forEach(d => html += `<div><b>${d}</b></div>`);
+
+  let primeiroDia = new Date(ano, mes, 1).getDay();
+  for (let i = 0; i < primeiroDia; i++) html += '<div class="calendar-day feriado"></div>';
+
+  let diasNoMes = new Date(ano, mes + 1, 0).getDate();
+
+  for (let dia = 1; dia <= diasNoMes; dia++){
+    let dataStr = `${ano}-${String(mes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+    let data = new Date(ano, mes, dia);
+    let diaSemana = data.getDay();
+    let isFeriado = feriados.includes(dataStr);
+    let classes = 'calendar-day';
+    if (isFeriado || diaSemana === 0 || diaSemana === 6) classes += ' feriado';
+    let hoje = new Date();
+    if (data.getDate() === hoje.getDate() && data.getMonth() === hoje.getMonth() && data.getFullYear() === hoje.getFullYear()) {
+      classes += ' hoje';
+    }
+
+    let box = `<div class="${classes}"><div class="data-num">${dia}</div>`;
+
+    eqs.forEach(eq => {
+      if (!eq.dataInicio) return;
+      let diasCorridos = Math.floor((data - new Date(eq.dataInicio)) / (1000 * 60 * 60 * 24));
+      if (diasCorridos < 0) return;
+      if (diasCorridos % 5 === 0) {
+        if (eq.fixo) {
+          let label = observacoes[dataStr]?.[eq.fixo] || eq.fixo;
+          box += `<div class="work" onclick="editarObs('${dataStr}','${eq.fixo}')"
+                  style="background:#003366;color:white;">${label}</div>`;
+        }
+        let ciclo = Math.floor(diasCorridos / 5) % 3;
+        const rodizio = [[0,1,2],[1,2,0],[2,0,1]];
+        rodizio[ciclo].forEach(idx => {
+          let nome = eq.rotativos[idx];
+          if (nome) {
+            let label = observacoes[dataStr]?.[nome] || nome;
+            box += `<div class="work" onclick="editarObs('${dataStr}','${nome}')"
+                    style="background:#66b0ff;color:white;">${label}</div>`;
+          }
+        });
+      }
+    });
+
+    afastamentos.forEach((af, i) => {
+      if (dataStr >= af.inicio && dataStr <= af.fim) {
+        let nome = af.membro === 'F' ? equipes[af.equipe]?.fixo : equipes[af.equipe]?.rotativos[parseInt(af.membro[1])];
+        let cls = af.tipo === 'FERIAS' ? 'ferias' : (af.tipo === 'LICENCA' ? 'licenca' : 'compensacao');
+        box += `<div class="afastamento ${cls}" onclick="editarAfastamento(${i})">${nome} (${af.tipo})</div>`;
+      }
+    });
+
+    box += `</div>`;
+    html += box;
+  }
+
+  html += "</div>";
+  document.getElementById('relatorio').innerHTML = html;
+}
+
+function editarObs(data,nome){
+  let atual = observacoes[data]?.[nome] || nome;
+  let novo = prompt("Editar nome para o dia "+data+":", atual);
+  if (novo !== null && novo.trim() !== '') {
+    if (!observacoes[data]) observacoes[data] = {};
+    observacoes[data][nome] = novo.trim();
+    salvarObservacoes();
+    gerarEscala();
+  }
+}
+
+document.getElementById('btnAddEquipe').onclick=()=>{ equipes.push({nome:"",dataInicio:"",fixo:"",rotativos:["","",""]}); renderEquipes();};
+document.getElementById('btnSalvar').onclick=salvarEquipes;
+document.getElementById('btnVisualizar').onclick=visualizarEquipes;
+document.getElementById('btnExcluir').onclick=excluirEquipe;
+document.getElementById('btnAfastamentos').onclick=()=>abrirModal('modalAfastamento');
+document.getElementById('btnFeriados').onclick=()=>abrirModal('modalFeriado');
+document.getElementById('btnGerarEscala').onclick=gerarEscala;
+
+(function(){ 
+  let sm=document.getElementById('selectMes'), sa=document.getElementById('selectAno');
+  ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'].forEach((m,i)=>sm.innerHTML+=`<option value="${i}">${m}</option>`);
+  let ano=new Date().getFullYear(); for(let a=ano;a<=ano+1;a++) sa.innerHTML+=`<option>${a}</option>`;
+  sm.value = new Date().getMonth();
+  sa.value = new Date().getFullYear();
+})();
+renderEquipes();
+</script>
+
+</body>
+</html>
